@@ -1,61 +1,87 @@
-# Delta Live Tables Streaming Pipeline (DLT)
+# Delta Live Tables Streaming ETL
 
-This project demonstrates a full streaming ETL pipeline using **Databricks Delta Live Tables (DLT)** in the **medallion architecture** pattern.
+This repository contains a Delta Live Tables (DLT) pipeline for processing streaming order data using the medallion architecture (Bronze → Silver → Gold). It demonstrates real-time ingestion, enrichment, and curation flows using append-only streaming tables.
 
-## 🔁 Pipeline Overview
+---
 
-### 🟤 Bronze Layer
-- **`order_stream`**: Ingests raw order data from `dlt_demo.source.orders` (streaming source).
-- **`customer_mv`**: Loads customer master data from `dlt_demo.source.customers` (batch source).
+## 📚 Architecture Overview
 
-### 🔹 Silver Layer
-- **`silver_orders`**: Enriched order stream with customer information.
-- **`completed_orders`**: View that filters orders where `order_status = 'COMPLETE'`.
-- **`pending_orders`**: View that filters orders where `order_status = 'PENDING'`.
-- **`append_orders_stream`**: Streaming append table that consolidates completed and pending orders.
+         +-------------------+
+         | source.orders     | ← raw stream
+         +-------------------+
+                  |
+            [Bronze Layer]
+                  ↓
+         +-------------------+
+         | dlt.order_stream  |
+         +-------------------+
+
+         +-------------------+
+         | dlt.customer_mv   |
+         +-------------------+
+
+            [Silver Layer]
+                  ↓
+         +-------------------+
+         | dlt.silver_orders |
+         +-------------------+
+                  ↓
+   +--------------------+--------------------+
+   | dlt.pending_orders | dlt.completed_orders|
+   +--------------------+--------------------+
+                  ↓
+     [Streaming Table: Append Flow]
+                  ↓
+      +-----------------------------+
+      | dlt.filtered_orders_append  |
+      +-----------------------------+
+
+            [Gold Layer]
+                  ↓
+         +-----------------------------+
+         | dlt.fact_orders            |
+         | dlt.append_orders_stream   |
+         +-----------------------------+
+
+
+---
+
+## 🏗️ Pipeline Components
+
+### 🔸 Bronze Layer
+- **order_stream**: Ingests streaming orders from a raw source.
+- **customer_mv**: Materialized view of customer data (batch).
+
+### ⚪ Silver Layer
+- **silver_orders**: Joins orders with customer info.
+- **pending_orders / completed_orders**: Views filtering based on `order_status`.
+- **filtered_orders_append**: Streaming table for append-only writes.
 
 ### 🟡 Gold Layer
-- **`fact_orders`**: Fact table with enriched fields and derived date dimensions.
-- **`append_orders_stream`**: Also promoted to a gold table (dual use) for analytics.
+- **fact_orders**: Final curated fact table.
+- **append_orders_stream**: Combines pending and completed order streams.
 
-## 🛠 Technologies Used
+---
 
-- **Databricks Delta Live Tables**
-- **Structured Streaming**
-- **PySpark**
-- **Medallion Architecture** (Bronze → Silver → Gold)
+## ⚙️ Features
 
-## 📂 Table Summary
+- ✅ Real-time ingestion with `dlt.read_stream`.
+- ✅ Modular pipeline with `@dlt.view`, `@dlt.table`, and `@dlt.create_streaming_table`.
+- ✅ Append-only logic using `dlt.append_flow` pattern.
+- ✅ Auto compaction and optimization properties enabled.
 
-| Layer   | Table/View           | Type       | Description                                  |
-|---------|----------------------|------------|----------------------------------------------|
-| Bronze  | `order_stream`       | Table      | Raw order stream from source                 |
-| Bronze  | `customer_mv`        | Table      | Materialized customer batch view             |
-| Silver  | `silver_orders`      | Table      | Enriched order-customer join                 |
-| Silver  | `completed_orders`   | View       | Filtered view for completed orders           |
-| Silver  | `pending_orders`     | View       | Filtered view for pending orders             |
-| Silver  | `append_orders_stream` | Streaming Table | Consolidated append-only orders       |
-| Gold    | `fact_orders`        | Table      | Fact table with order + time dimensions      |
-| Gold    | `append_orders_stream` | Table    | Reused as a gold layer streaming table       |
-
-## 🚀 How to Run
-
-1. Deploy the code into a Databricks notebook or a Python file.
-2. Ensure the following **source tables** exist in `dlt_demo.source`:
-   - `orders` (must be a streaming source)
-   - `customers` (batch table)
-3. Create a **Delta Live Tables pipeline** using the Databricks UI.
-4. Point the pipeline to this script and run it.
-
-## ✅ Features
-
-- Enrichment joins between real-time and batch datasets
-- Logical views for filtering status
-- Append-only streaming table consolidation
-- Gold layer fact table with time-dimension extraction
+---
 
 ## 📌 Notes
 
-- `append_orders_stream` is both a silver and gold layer component (dual usage).
-- Optimizations like `delta.autoOptimize.optimizeWrite` and `autoCompact` are enabled on the streaming append table.
+- Use `dlt.create_streaming_table(name="filtered_orders_append")` before defining append flows.
+- `pending_orders` and `completed_orders` are logical views that append into `filtered_orders_append`.
+- Designed for scalable streaming transformations on Databricks DLT.
+
+---
+
+## 🔧 To Do
+- Add schema expectations and validations.
+- Introduce dead-letter queues or quarantine for failed records.
+- Add surrogate dimension support (customer, date, product).
 
