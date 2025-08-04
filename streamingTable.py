@@ -56,6 +56,26 @@ def pending_orders():
     return dlt.read("silver_orders").filter(F.col("order_status") == "PENDING")
 
 
+@dlt.create_streaming_table(
+    name="append_orders_stream",
+    comment="Streaming view for append-only orders.",
+    table_properties={
+        "quality": "silver",
+        "delta.autoOptimize.optimizeWrite": "true",
+        "delta.autoOptimize.autoCompact": "true"
+    }
+)
+
+@dlt.append_flow(table="append_orders_stream")
+def append_completed_orders():
+    return dlt.read_stream("completed_orders")
+
+
+@dlt.append_flow(table="append_orders_stream")
+def append_pending_orders():
+    return dlt.read_stream("pending_orders")
+
+
 # Gold Layer: Fact table construction
 @dlt.table(
     name="fact_orders",
@@ -79,9 +99,9 @@ def fact_orders():
 
 
 @dlt.table(
-    name="completed_orders_fact",
+    name="append_orders_stream",
     comment="Gold fact table for completed orders only.",
     table_properties={"quality": "gold"}
 )
-def completed_orders():
-    return dlt.read("completed_orders")
+def append_orders_stream():
+    return dlt.read("append_orders_stream")
