@@ -66,12 +66,12 @@ def pending_orders():
     }
 )
 
-@dlt.append_flow(table="append_orders_stream")
+@dlt.append_flow(target="append_orders_stream")
 def append_completed_orders():
     return dlt.read_stream("completed_orders")
 
 
-@dlt.append_flow(table="append_orders_stream")
+@dlt.append_flow(target="append_orders_stream")
 def append_pending_orders():
     return dlt.read_stream("pending_orders")
 
