@@ -1,0 +1,130 @@
+# ============================================================
+# DELTA LIVE TABLES PIPELINE
+# ============================================================
+# This DLT pipeline demonstrates a Medallion Architecture:
+#    BRONZE → SILVER → GOLD
+# where the GOLD layer implements **Slowly Changing Dimension Type 2 (SCD2)**
+# using Databricks Delta Live Tables native CDC (Change Data Capture) features.
+#
+# ▪️ Bronze Layer → Raw Ingestion from Cloud Storage
+# ▪️ Silver Layer → Data Cleansing & Enrichment
+# ▪️ Gold Layer   → Dimension Table with Full Historical Tracking (SCD Type 2)
+# ============================================================
+
+import dlt
+from pyspark.sql.functions import *
+
+
+# ============================================================
+# 🟤 BRONZE LAYER — Raw Data Ingestion
+# ============================================================
+# Ingests CSV data continuously from a Volume path using Auto Loader.
+# Schema evolution is automatically handled.
+# The Bronze layer serves as the raw landing zone for unprocessed data.
+@dlt.table(
+    comment="Bronze Table - Raw customer data ingested from cloud volume.",
+    name="dlt_demo.bronze.customer_data",
+)
+def customer_data():
+    return (
+        spark.readStream.format("cloudFiles")
+        .option("cloudFiles.format", "csv")
+        .option("cloudFiles.inferColumnTypes", "true")
+        .option("cloudFiles.schemaEvolutionMode", "addNewColumns")
+        .option("cloudFiles.schemaLocation", "/Volumes/dlt_demo/bronze/brnz_schema")
+        .load("/Volumes/dlt_demo/bronze/brnz")
+    )
+
+
+# ============================================================
+# ⚪ SILVER LAYER — Cleansed and Standardized Data
+# ============================================================
+# The Silver layer filters, enriches, and prepares data for analytics.
+# Here we:
+#   - Filter invalid departments
+#   - Split customer names
+#   - Add metadata timestamps
+# This layer serves as a trusted source for downstream dimensions and facts.
+@dlt.table(
+    comment="Silver Table - Cleaned and enriched customer data.",
+    name="dlt_demo.silver.customers",
+)
+def customers():
+    return (
+        dlt.read_stream("dlt_demo.bronze.customer_data")
+        .filter(col("dept").isNotNull())
+        .filter(col("dept") == "d2")
+        .withColumn("created_date", to_date(col("eventTimestamp")))
+        .withColumn("loaded_timestamp", current_timestamp())
+        .withColumn("first_name", split(col("customer_name"), " ").getItem(0))
+        .withColumn("last_name", split(col("customer_name"), " ").getItem(1))
+        .select(
+            col("customer_id"),
+            col("first_name"),
+            col("last_name"),
+            col("dept"),
+            col("created_date"),
+            col("loaded_timestamp")
+        )
+    )
+
+
+# ============================================================
+# 🟡 GOLD LAYER — Dimension Table
+# ============================================================
+# The Gold layer represents a **Customer Dimension** for analytics.
+# This is a static structure for base attributes — the actual historical
+# versioning and SCD Type 2 logic will be applied below using CDC.
+@dlt.table(
+    comment="Customer Dimension Table - Base structure for SCD Type 2.",
+    name="dlt_demo.gold.customer_dim",
+)
+def customer_dim():
+    return (
+        dlt.read("dlt_demo.silver.customers")
+        .withColumn("full_name", concat(col("first_name"), lit(" "), col("last_name")))
+        .withColumn("is_active", lit(True))
+        .withColumn("row_start_date", current_date())
+        .withColumn("row_end_date", lit(None).cast("date"))
+        .withColumn("is_current", lit(True))
+        .select(
+            col("customer_id").alias("customer_dk"),
+            "full_name",
+            "dept",
+            "is_active",
+            "row_start_date",
+            "row_end_date"
+        )
+    )
+
+
+# ============================================================
+# 💎 SCD TYPE 2 IMPLEMENTATION — Using DLT Auto CDC Flow
+# ============================================================
+# This section is where Delta Live Tables truly shines.
+# With a few declarative lines, DLT automatically handles:
+#   ✅ Change Data Capture (CDC)
+#   ✅ Historical tracking of attribute changes
+#   ✅ Start/End date management (row_start_date, row_end_date)
+#   ✅ Current flag management (is_current)
+#   ✅ Inserts, updates, and deactivations of records
+#
+# The result is a fully-managed **Slowly Changing Dimension Type 2** table.
+# ============================================================
+
+# Create a streaming target table for SCD Type 2 data
+dlt.create_streaming_table(
+    name="dlt_demo.gold.customer_dim_scd2"
+)
+
+# Apply Change Data Capture (CDC) flow
+dlt.create_auto_cdc_flow(
+    target="dlt_demo.gold.customer_dim_scd2",    # Destination table with historical tracking
+    source="dlt_demo.silver.customers",          # Source stream to monitor
+    keys=["customer_id"],                        # Natural key for change detection
+    sequence_by=col("loaded_timestamp"),         # Time column used to detect newest record
+    stored_as_scd_type=2,                        # Enable Slowly Changing Dimension Type 2
+    track_history_column_list=["dept", "first_name", "last_name"],  # Columns to track changes on
+    # except_column_list=["event_timestamp"],    # Optional: exclude columns from change tracking
+    ignore_null_updates=True                     # Ignore updates with NULL values
+)
