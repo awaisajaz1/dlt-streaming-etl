@@ -128,3 +128,5 @@ dlt.create_auto_cdc_flow(
     # except_column_list=["event_timestamp"],    # Optional: exclude columns from change tracking
     ignore_null_updates=True                     # Ignore updates with NULL values
 )
+
+# Add Gracefull Exit
