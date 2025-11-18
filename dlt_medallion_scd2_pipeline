@@ -11,6 +11,7 @@
 # ▪️ Gold Layer   → Dimension Table with Full Historical Tracking (SCD Type 2)
 # ============================================================
 
+# import required libraries
 import dlt
 from pyspark.sql.functions import *
 
