@@ -1,7 +1,7 @@
 import dlt
 from pyspark.sql import functions as F
 
-# Bronze Layer: Raw streaming ingestion
+# Bronze Layer: Raw streaming ingestion from Bronze layer (Already in ADLS)
 @dlt.table(
     name="order_stream",
     comment="Streaming source table for new orders.",
