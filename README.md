@@ -9,7 +9,7 @@ Simple Delta Live Tables (DLT) pipeline using streaming tables and views.
   - **pending_orders** (view)
   - **completed_orders** (view)
 - **filtered_orders_append** → Streaming Silver (append-only)
-- **append_orders_stream** → Final Streaming Table
+- **append_orders_stream** → Final Streaming Tables
 
 ## Highlights
 
